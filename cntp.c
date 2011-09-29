@@ -23,51 +23,90 @@
 #include <netdb.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
-int main(int argc, char *argv[], char **env)
+int main(int argc, char *argv[])
 {
     char *port = "123";
     char *server = "pool.ntp.org";
+    int timeout = 5;
     int sock;
     struct addrinfo *addr;
     socklen_t addrlen = sizeof(struct sockaddr_storage);
     char buf[48];
+    fd_set fdset;
 
-    if (argc == 2) {
-        server = argv[1];
-        //printf("Usage :\n\t%s <server> [port]\n", argv[0]);
+    uint32_t *recv_time;
+    time_t t;
+    struct tm *now;
+
+    //Parse Arguments
+    int n;
+    for(n=1; n<argc; n++) {
+        if (argv[n][0] == '-') {
+            switch(argv[n][1])
+            {
+                case 's':
+                    server = argv[n+1];
+                    break;
+                case 'p':
+                    port = argv[n+1];
+                    break;
+                case 't':
+                    timeout = atoi(argv[n+1]);
+                    break;
+                case 'h':
+                    printf("Usage: %s [Options]\n \
+                            -h\thost default: %s)\n \
+                            -p\tport (default: %s)\n \
+                            -t\ttimeout (default: %is)\n \
+                            -h\tthis help\n", argv[0], server, port, timeout);
+                    exit(0);
+                    break;
+                default:
+                    fprintf(stderr, "Unknown Parameter");
+            }
+        }
     }
-    if (argc > 2) {
-        port = argv[2];
-    }
-    
+
+    // Connect
     if (getaddrinfo(server, port, NULL, &addr) != 0) {
-        printf("Unknown Host !\n");
+        fprintf(stderr, "Unknown Host !\n");
         exit(-1);
     }
     sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock == -1) {
-        printf("Error creating Socket !\n");
+        fprintf(stderr, "Error creating Socket !\n");
         exit(-1);
     }
     // Send
     memset(&buf, 0, 48);
     buf[0] = 0xE3;
     if (sendto(sock, buf, 48, 0, addr->ai_addr, addrlen) == -1) {
-        printf("Error sending\n");
+        fprintf(stderr, "Error sending\n");
+        exit(-1);
+    }
+    // Timeout
+    FD_ZERO(&fdset);
+    FD_SET(sock, &fdset);
+    struct timeval tout = {timeout, 0};
+    if (select(sock+1, &fdset, NULL, NULL, &tout) == -1) {
+        fprintf(stderr, "Timeout Error \n");
+        exit(-1);
+    }
+    if (!FD_ISSET(sock, &fdset)) {
+        fprintf(stderr, "Timeout ... %i s\n", timeout);
         exit(-1);
     }
     // Recieve
     if (recvfrom(sock, buf, 48, 0, addr->ai_addr, &addrlen) == -1) {
-        printf("Error recieving\n");
+        fprintf(stderr, "Error recieving\n");
         exit(-1);
     }
-
+    // Close
     freeaddrinfo(addr);
+    close(sock);
 
-    uint32_t *recv_time;
-    time_t t;
-    struct tm *now;
     recv_time = (uint32_t*)&buf[32];
     t = (((*recv_time & 0xff000000) >> 24)|
          ((*recv_time & 0x00ff0000) >> 8)|
