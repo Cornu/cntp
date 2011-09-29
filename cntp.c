@@ -25,19 +25,34 @@
 #include <time.h>
 #include <unistd.h>
 
+#define NTP_OFFSET 2208988800UL		// Offset 1900-1970
+typedef struct {
+		char dummy[40];
+		unsigned long rx_timestamp;
+} ntp_struct;
+
+static uint8_t NTP[]= {
+    0xd9,0x00,0x0a,0xfa,0x00,0x00,0x00,0x00,
+    0x00,0x01,0x04,0x00,0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+    0xc7,0xd6,0xac,0x72,0x08,0x00,0x00,0x00
+};
+
 int main(int argc, char *argv[])
 {
     char *port = "123";
     char *server = "pool.ntp.org";
     int timeout = 5;
     char *timestring = "%a %Y-%m-%d %H:%M:%S %Z";
+    int set = 0;
     int sock;
     struct addrinfo *addr;
     socklen_t addrlen = sizeof(struct sockaddr_storage);
-    char buf[48];
     fd_set fdset;
+    ntp_struct ntp;
 
-    uint32_t *recv_time;
     time_t t;
     struct tm *now;
 
@@ -47,7 +62,7 @@ int main(int argc, char *argv[])
         if (argv[n][0] == '-') {
             switch(argv[n][1])
             {
-                case 's':
+                case 'h':
                     server = argv[n+1];
                     break;
                 case 'p':
@@ -59,17 +74,21 @@ int main(int argc, char *argv[])
                 case 'f':
                     timestring = argv[n+1];
                     break;
-                case 'h':
+                case 's':
+                    set = 1;
+                    break;
+                case '-':
                     printf("Usage: %s [Options]\n"
-                           "\t-s\thost default: %s)\n"
+                           "\t-h\thost default: %s)\n"
                            "\t-p\tport (default: %s)\n"
                            "\t-t\ttimeout (default: %is)\n"
                            "\t-f\tformat (default: %s)\n"
-                           "\t-h\tthis help\n", argv[0], server, port, timeout, timestring);
+                           "\t-s\tset time with 'date'\n"
+                           "\t--help\tthis help\n", argv[0], server, port, timeout, timestring);
                     exit(0);
                     break;
                 default:
-                    fprintf(stderr, "Unknown Parameter");
+                    fprintf(stderr, "Unknown Parameter\n");
             }
         }
     }
@@ -85,10 +104,10 @@ int main(int argc, char *argv[])
         exit(-1);
     }
     // Send
-    memset(&buf, 0, 48);
-    buf[0] = 0xE3;
-    if (sendto(sock, buf, 48, 0, addr->ai_addr, addrlen) == -1) {
-        fprintf(stderr, "Error sending\n");
+    if (sendto(sock, NTP, sizeof(NTP), 0, addr->ai_addr, addrlen) == -1) {
+    	struct sockaddr_in *in;
+    	in = (struct sockaddr_in*)addr->ai_addr;
+        fprintf(stderr, "Network unreachable (%s)\n", inet_ntoa(in->sin_addr));
         exit(-1);
     }
     // Timeout
@@ -104,7 +123,7 @@ int main(int argc, char *argv[])
         exit(-1);
     }
     // Recieve
-    if (recvfrom(sock, buf, 48, 0, addr->ai_addr, &addrlen) == -1) {
+    if (recvfrom(sock, &ntp, sizeof(ntp), 0, addr->ai_addr, &addrlen) == -1) {
         fprintf(stderr, "Error recieving\n");
         exit(-1);
     }
@@ -112,17 +131,27 @@ int main(int argc, char *argv[])
     freeaddrinfo(addr);
     close(sock);
 
-    recv_time = (uint32_t*)&buf[32];
-    t = (((*recv_time & 0xff000000) >> 24)|
-         ((*recv_time & 0x00ff0000) >> 8)|
-         ((*recv_time & 0x0000ff00) << 8)|
-         ((*recv_time & 0x000000ff) << 24));
-    t -= 2208988800U;
+	if (htonl(42) == 42) {
+		// Big endian
+		t = ntp.rx_timestamp - NTP_OFFSET;
+	} else {
+		// Little endian
+		t = htonl(ntp.rx_timestamp) - NTP_OFFSET;
+	} 
     now = localtime(&t);
 
     char str[80];
-    strftime(str, sizeof(str), timestring, now);
-    puts(str);
+        
+    strftime(str, sizeof(str), "%m%d%H%M%Y.%S", now);
+    if (set) {
+		char cmd[20];
+		sprintf(cmd, "date %s", str);
+    	system(cmd);
+    } else {
+    	strftime(str, sizeof(str), timestring, now);
+    	puts(str);
+    }
 
     return 0;
 }
+
