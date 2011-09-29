@@ -30,6 +30,7 @@ int main(int argc, char *argv[])
     char *port = "123";
     char *server = "pool.ntp.org";
     int timeout = 5;
+    char *timestring = "%a %Y-%m-%d %H:%M:%S %Z";
     int sock;
     struct addrinfo *addr;
     socklen_t addrlen = sizeof(struct sockaddr_storage);
@@ -55,12 +56,16 @@ int main(int argc, char *argv[])
                 case 't':
                     timeout = atoi(argv[n+1]);
                     break;
+                case 'f':
+                    timestring = argv[n+1];
+                    break;
                 case 'h':
-                    printf("Usage: %s [Options]\n \
-                            -h\thost default: %s)\n \
-                            -p\tport (default: %s)\n \
-                            -t\ttimeout (default: %is)\n \
-                            -h\tthis help\n", argv[0], server, port, timeout);
+                    printf("Usage: %s [Options]\n"
+                           "\t-s\thost default: %s)\n"
+                           "\t-p\tport (default: %s)\n"
+                           "\t-t\ttimeout (default: %is)\n"
+                           "\t-f\tformat (default: %s)\n"
+                           "\t-h\tthis help\n", argv[0], server, port, timeout, timestring);
                     exit(0);
                     break;
                 default:
@@ -116,7 +121,7 @@ int main(int argc, char *argv[])
     now = localtime(&t);
 
     char str[80];
-    strftime(str, sizeof(str), "%a %Y-%m-%d %H:%M:%S %Z", now);
+    strftime(str, sizeof(str), timestring, now);
     puts(str);
 
     return 0;
