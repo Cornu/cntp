@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
                     break;
                 case '-':
                     printf("Usage: %s [Options]\n"
-                           "\t-h\thost default: %s)\n"
+                           "\t-h\thost (default: %s)\n"
                            "\t-p\tport (default: %s)\n"
                            "\t-t\ttimeout (default: %is)\n"
                            "\t-f\tformat (default: %s)\n"
